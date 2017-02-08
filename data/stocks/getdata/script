@@ -1,0 +1,11 @@
+#!/bin/bash
+urlprefix="http://real-chart.finance.yahoo.com/table.csv?s="
+urlsuffix="&a=03&b=12&c=2000&d=09&e=22&f=2014&g=d&ignore=.csv"
+while read line
+do
+    ticker=$line
+    wget ${urlprefix}${ticker}${urlsuffix} -O tmp.csv
+    awk -F, '{print $1 "," $7}' tmp.csv > ${ticker}.csv
+    rm tmp.csv
+    sleep 5
+done
