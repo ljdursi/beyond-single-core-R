@@ -31,9 +31,9 @@ ideal.gas.fixedT <- function(presrange, nrange, trange, vnoiseamp, vnoisesd) {
   data <- data.frame(pres,vol,n,temp)   
 }
 
-plarge <- seq(90000,110000,length.out=20000)
-tlarge <- seq(280,320,length.out=400)
-nlarge <- seq(.5,2.,length.out=15)
+plarge <- seq(90000, 110000, length.out=5000)
+tlarge <- seq(280, 320, length.out=41)
+nlarge <- seq(.5, 2., length.out=16)
 
 large <- ideal.gas.fixedT(plarge, nlarge, tlarge, 0.1, 0.1)
 write.csv(large, "ideal-gas-fixedT-large.csv",row.names=FALSE)
