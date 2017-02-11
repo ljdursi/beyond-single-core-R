@@ -1,11 +1,11 @@
 mergeData <- function(filelist, outfilebase) {
     datasets <- lapply(filelist, read.airline)
     data <- Reduce(rbind, datasets)
-    saveRDS(data,file=paste0(outfilebase,".RDS'")
+    saveRDS(data,file=paste0(outfilebase,".RDS"))
 }
 
 source("read_airline.R")
-for (year in c( 1988:2009, 2011:2012 ) ) {
+for (year in c( 1988:2008, 2010:2012 ) ) {
     yearstr <- as.character(year)
 
     filebase <- paste0("airOT", yearstr)
