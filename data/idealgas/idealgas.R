@@ -35,5 +35,9 @@ plarge <- seq(90000, 110000, length.out=5000)
 tlarge <- seq(280, 320, length.out=41)
 nlarge <- seq(.5, 2., length.out=16)
 
-large <- ideal.gas.fixedT(plarge, nlarge, tlarge, 0.1, 0.1)
-write.csv(large, "ideal-gas-fixedT-large.csv",row.names=FALSE)
+#large <- ideal.gas.fixedT(plarge, nlarge, tlarge, 0.1, 0.1)
+#write.csv(large, "ideal-gas-fixedT-large.csv",row.names=FALSE)
+library(bigmemory)
+data <- read.big.matrix("ideal-gas-fixedT-large.csv", header=TRUE,  
+                         backingfile="ideal-gas-fixedT-large.bin", 
+                         descriptorfile="ideal-gas-fixedT-large.desc")

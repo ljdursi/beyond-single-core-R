@@ -1,20 +1,18 @@
-Beyond Single-Core R
+Beyond Single-Core R 
 ========================================================
 author: Jonathan Dursi
-date: 14 Feb 2017
-font-import: https://fonts.googleapis.com/css?family=Ubuntu+Mono:400,700,400italic
-font-import: https://fonts.googleapis.com/css?family=Average
-font-import: https://fonts.googleapis.com/css?family=Oswald
+date: http://github.com/ljdursi/beyond-single-core-R
+font-import: http://fonts.googleapis.com/css?family=Average
+font-import: http://fonts.googleapis.com/css?family=Oswald
 font-family: 'Average'
 autosize: true
 transition-speed: fast
-css: oicr.css
-
+css: assets/oicr.css
 
 ```{r setup, include="false"}
 library(knitr)
 set.seed(1)
-opts_knit$set(root.dir='..')
+opts_knit$set(root.dir='.')
 trunc.gc <- function() { gc(TRUE)[,c(1:2,5:6)] }
 ```
 
@@ -23,263 +21,249 @@ Today's Outline
 
 Today will look something like this:
 
-- Parallel Package (90 min)
+- How to think about scaling 
+- Parallel Package
     - Multicore
     - Snow
-- Foreach (30 min)
-- BigMemory (30 min)
-- Rdsm (30 min)
-- pbdR (1 hr)
-- Scalable Data Analysis Best Practices (30 min)
+- Foreach
+- Scalable Data Analysis Best Practices
 
+Extra material online
+========================================================
+- R and Memory
+- Data file formats
+- BigMemory 
+- Rdsm 
+- pbdR 
+  
+Not Covered
+========================================================
+- R in other frameworks
+  - SparkR (R + Apache Spark)
+  - RHadoop
+  - Cool but more about the other framework than R
 
-Out Of Core / External Memory Computation
+Thinking about scaling
+============================================
+type: sub-section
+
+Some hardware terms
+============================================
+
+Hardware:
+
+- Node: A single motherboard, with possibly multiple sockets
+- Processor/Socket: the silicon containing likely multiple cores
+- Core: the unit of computation; often has hardware support for
+- Pseudo-cores: can appear to the OS as multiple cores but share much functionality between other pseudo-cores on the same core
+
+***
+
+![Sockets, Cores, and Hardware therads](images/sockets-cores.png)
+
+Some software terms
+============================================
+
+Processes and threads:
+
+- Process: Data and code in memory
+- One or more **threads** of execution within a process
+- Threads in the same process can see most of the same memory
+- Processes generally cannot peer into another processes memory
+
+***
+
+![Processes vs threads](images/process-threads.png)
+
+Parallel computing: faster, bigger, more
+============================================
+One turns to parallel computing to solve one of three problems:
+
+My program is too **slow**.
+
+Perhaps using more cores --- *e.g.*, all cores on my desktop --- will make things  **faster**.
+- Compute bound.
+- Tools:
+  - parallel/multicore
+  - Rdsm
+  - GPUs
+    
+***
+
+![Rack of Computers](images/rack.png)
+
+Parallel computing: faster, bigger, more
+============================================
+My problem is too **big**.
+
+Perhaps splitting the problem up onto multiple computers in a cluster will give it access to enough memory to run effectively.
+- Memory bound
+- Tools: 
+  - parallel/snow
+  - pbdR
+    
+***
+
+![Rack of Computers](images/rack.png)
+
+Parallel computing: faster, bigger, more
+============================================
+There are too **many** computations to do - one task runs in a reasonable amount of time, but I have to run thousands!
+
+Perhaps splitting the problem up onto multiple computers in a cluster will give it access to enough memory to run.
+    
+- Tools: 
+  - gnu-parallel
+  - parallel
+  - job queues...
+    
+***
+
+![Rack of Computers](images/rack.png)
+
+Parallel computing: faster, bigger, more
+============================================
+
+*Not* on this list:
+
+My program constantly randomly reads from and writes to thousands of files and these operations are
+very slow.
+
+These I/O bound problems are not easily solved with parallelism - adding more processors or nodes
+doesn't necessarily help (can make worse).
+
+Need better I/O strategy - databases? 
+
+Concurrency: Multiple Independant Computations
 ========================================================
 
-Some problems require doing fairly simple analysis on a data set too large to fit into memory.
+For more cores/nodes to help, there has to be something for them to do.
 
-- Min/mean/max
-- Data cleaning
-- Even linear fitting is pretty simple
+Find largely independent computations to occupy them.
 
-In that case, one processor may be enough; you just want a way to not overrun memory.
+Classic example of this is a parameter study, or set of simulations with
+different seeds:
 
-_Out of Core_, or _External Memory_ computation leaves the data on disk, bringing 
-in to memory only what is needed/fits at any given point.
+"More" case
 
-For some computations, this works well (but note: disk access is always ***much***
-slower than memory access.)
+*** 
+![Parameter Study](images/paramstudy.png)
 
-Bigmemory Package
+Scaling of parameter study: Througput
 ========================================================
+In this example, no individual task runs any faster with more processors,
+but the workload as a whole can.
 
-<div class="columns-2">
+How long it takes to process the N tasks you want done
 
-The `bigmemory` package defines a generalization of a matrix class, `big.matrix`, which can be _file-backed_ - that is, can exist primarily on disk, with parts brought into memory when necessary.
+Throughput: how many tasks/time
 
-This approach works fairly well when one's data access involves passing through the
-entire data set once or a very small number of times, either combining data or 
-extracting a subset.
+For completely independent tasks, P processors can increase throughput by factor P!
+ 
+***
+![Throughput](images/throughput.png)
 
-Packages like `bigalgebra` or `biganalytics` (not covered here) build on`bigmemory`.
 
-![External Memory](images/external-memory-sm.png)
-</div>
-
-Ideal gas Data Set
+Scaling of parameter study with number of processors
 ========================================================
+How a problem scales: how throughput behaves as processor number increases.
 
-In `data/idealgas`, we have a set of synthetic data files describing an ideal gas experiment - setting temperature, amount of material, and volume, and measuring the pressure.  
+In this case, the throughput scales linearly with the number of processors.
 
-Simple data sets:
-```{r}
-small.data <- read.csv("data/idealgas/ideal-gas-fixedT-small.csv")
-small.data[1:2,]
+This is the best case: "Perfect scaling"
+
+*** 
+```{r echo=FALSE}
+time.per.task <- 2.
+p <- 1:12
+throughput <- p/time.per.task
+plot(p, throughput, pch=16, xlab="Number of Processors", ylab="Throughput (tasks/time)")
 ```
 
-Row name, pressure (Pa), volume (m^3^), N (moles), and temperature (K).
 
-A larger data set consisting of 124M rows, 5.8GB, is sitting in ideal-gas-fixedT-large.csv, and we'd like to do some analysis of this data set.  But the size is a problem.
-
-A Note on File Formats
+Scaling of parameter study with number of processors
 ========================================================
+Another way to look at it: time it takes to get some fixed amount of work done
 
-Let's consider the humble .csv file:
-```
-$ ls -sh1 airOT2010.*
-151M airOT2010.RDS
-151M airOT2010.Rdata
-1.4G airOT2010.csv
+More usual (and more important!)
 
-$ Rscript  timeexamples.R
-[1] "Reading Rdata file"
-   user  system elapsed
- 11.697   0.616  12.319
-[1] "Reading RDS file"
-   user  system elapsed
- 11.041   0.644  11.694
-[1] "Reading CSV file"
-   user  system elapsed
-140.640   3.352 144.142
+Perfect scaling: time to completion ~ 1/P
+
+P procesors - P times faster
+
+*** 
+```{r echo=FALSE}
+time.per.task <- 2.
+ntasks <- 12
+total.time <- (time.per.task*ntasks)/p
+plot(p, total.time, pch=16, xlab="Number of Processors", ylab="Total Time Required")
+plot(p, total.time, log="xy", pch=16, xlab="Number of Processors", ylab="Total Time Required")
 ```
 
-A Note on File Formats
+Scaling of parameter study with number of processors
 ========================================================
+Finally, how efficient is the scaling - when you throw 10 processors at the problem,
+are you getting 10 times the processing?
 
-CSV --- or really, any text-based format --- is the worst possible format for quantiative data. It manages 
-the trifecta of being:
+Perfect scaling - efficiency = 100%
 
-- Slow to read
-- Huge
-- Inaccurate
-
-Converting floating point numbers back and forth between internal represenatations and strings is slow and
-prone to truncation.  
-
-Use binary formats whenver possible.  .Rdata is a bit prone to change; .RDS is modestly better.  Portable
-file formats like HDF5 (for data frames) or NetCDF4 (for matrices and arrays) are compact, accurate, fast
-(not as fast as .Rdata/.RDS), and can be read by tools other than R.
-
-
-Creating a file-backed big matrix
-========================================================
-
-We've already created a big.matrix file from this data set, using
-```{r eval=FALSE}
-data <- read.big.matrix("data/idealgas/ideal-gas-fixedT-large.csv", header=TRUE,  
-                        backingfile="data/idealgas/ideal-gas-fixedT-large.bin", 
-                        descriptorfile="ideal-gas-fixedT-large.desc")
+*** 
+```{r echo=FALSE}
+ideal.time <- (time.per.task*ntasks)/p
+efficiency <- ideal.time/total.time
+plot(p, efficiency, pch=16, xlab="Number of Processors", ylab="Parallel Efficiency)")
 ```
 
-This reads in the .csv file and outputs a binary equivalent (the "backingfile") and a descriptor (in the "descriptorfile") which contains all of the information which describes the binary blob.
 
-You can read the descriptorfile: `more ideal-gas-fixedT-large.desc`
-
-Done for you since initial convertion takes 12 minutes for this set - kind of boring.
-
-**Note**: converts into a _matrix_, which is a less flexible data type than a data frame; homogeneous type.   Here, we'll use all numeric.
-
-Using a big.matrix
+Finding concurrency: Split, Apply, Combine
 ========================================================
 
-Let's do some simple analysis on the data set and see how memory behaves.
-```{r}
-library(bigmemory, quiet=TRUE)
-orig.gc <- trunc.gc()
-data <- attach.big.matrix("data/idealgas/ideal-gas-fixedT-large.desc")
-trunc.gc()-orig.gc
+Popularized by Henry Wickham, this has
+become a model for thinking about data analysis in R in the tidyverse.
+
+Split the data set up into relevant sub-sets; apply some analysis to it; combine the
+results.
+
+This is exactly the way to think about scalable data analysis.  Split the data - 
+or tasks on that data - up between computing elements; do the analyses; then combine
+the results somehow.
+
+The details depend a great deal on the analyses (and the nature of the data.)
+
+*** 
+
+![Split, Apply, Combine](images/split-apply-combine.png)
+
+Imperfect parallelism
+========================================================
+
+"Split" and "Combine" aren't free!
+
+Partitioning the work, and assembling the final results from the partial results,
+represents some overhead - some fraction of the work that must be done in serial.
+
+Splitting the work and distributing it over a network takes even more time.
+
+Amdal's Law:
+$$
+T \approx \left ( f + \frac{1 - f}{P} \right )
+$$
+
+*** 
+```{r echo=FALSE}
+amdall.efficiency <- function(f,p) (1./p) / (f + (1.-f)/p)
+serial.fracs <- seq(0.,.75,by=.15)
+eff <- matrix(nrow=length(serial.fracs), ncol=length(p))
+for (i in 1:length(serial.fracs)) {
+  eff[i,] <- sapply(p, function(np) amdall.efficiency(serial.fracs[i], np))
+}
+matplot(t(eff), type = c("b"), pch=16, xlab="Number of Processors", ylab="Efficiency", col=1:6)
+legend("topright", legend = serial.fracs,  pch=16, col=1:6, title="Serial Fraction")
 ```
 
-Using a big.matrix
+Existing parallelism (BLAS, package support)
 ========================================================
-
-Let's do some simple analysis on the data set and see how memory behaves.
-```{r}
-data[1:2,]
-system.time(min.p <- min(data[,"pres"]))
-trunc.gc()-orig.gc
-```
-
-Using a big.matrix
-========================================================
-
-That only took ~7 seconds to scan through 124M records to find a minimum.  Let's try a few other calculations:
-Let's do some simple analysis on the data set and see how memory behaves.
-```{r}
-min.p
-system.time(max.p <- max(data[,"pres"]))
-system.time(mean.t <- mean(data[,"temp"]))
-```
-
-Using a big.matrix
-========================================================
-
-Going through the same column a second time was faster, because some of the data was cached; going through a new column was about the same speed as the first.  What has that done to memory?
-```{r}
-trunc.gc()-orig.gc
-```
-
-Using a big.matrix
-========================================================
-
-Let's try something more complicated: we know that averaged over our data, we should have $p V = n R T$.  Let's try to infer the gas constant $R$:
-
-```{r}
-system.time(sum.pv <- sum(data[,"pres"]*data[,"vol"]))
-system.time(sum.nt <- sum(data[,"n"]*data[,"temp"]))
-sum.pv/sum.nt
-```
-
-Using a big.matrix
-========================================================
-
-And we're still not using that much memory.
-
-```{r}
-trunc.gc()-orig.gc
-```
-
-Using a big.matrix
-========================================================
-
-Let's extract a subset of the data and analyze it.  
-
-The `mwhere` command in `bigmemory` lets us search through the data for **m**ultiple conditions, and extract that data:
-
-```{r}
-system.time(subset.data <- data[mwhich(data, cols=c("n","pres"), 
-                                       vals=c(1.,101000.), comps="eq", op="AND"),])
-class(subset.data)
-fit <- lm(vol ~ temp, data=as.data.frame(subset.data))
-```
-
-Using a big.matrix
-========================================================
-
-```{r}
-summary(fit)
-```
-
-Using a big.matrix
-========================================================
-
-```{r}
-object.size(subset.data)
-trunc.gc()-orig.gc
-```
-
-Using a big.matrix
-========================================================
-
-Other options:
-
-- `morder` or `mpermute` allow you to sort the data in memory or on disk
-- `head` and `tail` let you get the start/end rows
-- `mwhich` allows all sorts of slicing and dicing
-- `sub.big.matrix` lets you extract contiguous regions of the matrix
-
-Summary: bigmemory
-========================================================
-
-If you just have a data file much larger than memory that you have to crunch and the amount of actual computation is not a bottleneck, the `bigmemory` and related packages may be all you need.
-
-Works best if:
-
-- Data is of homogeneous type - eg, all integer, all numeric, all string
-- Just need to work on a subset of data at a time, or
-- Just need to make one or two passes through the data to complete analysis
-
-Bigmemory hands-on
-========================================================
-
-`lm()` doesn't work natively on a `big.matrix` - but we can write our own.
-
-If we have an OLS model $\hat{y_i} = a x_i + b + \epsilon$, we can fit it with 
-
-$b = \bar{y} - a \bar{x}$
-
-$a = \frac{\sum_i{ x_i y_i } - n \bar{x} \bar{y}}{\sum_i{x_i^2} - n \bar{x} \bar{x}}$
-
-Using the examples above, fit a couple of columns of the ideal gas data set.  Do the results make
-sense?  (Once it's working, try fitting $pV \propto nT$.)  How much memory is used?
-
-# Using multiple processors in R
-
-Using multiple processors in R
-========================================================
-
-The rest of today will cover using more processors and/or nodes to do large-scale computations 
-in R.
-
-Outline:
-
-- No-work parallelism: existing packages
-- `parallel` package:
-    - multicore (use all cores on a computer): non-windows
-    - snow (use all cores on a computer, or across a cluster)
-- `foreach` package: different interface to similar functionality
-- `Rdsm`: shared-memory parallelism (on-node) with big.matrix
-- `pbdR`: massive scale computation with MPI+R
+type: sub-section
 
 Existing parallelism
 ========================================================
@@ -307,41 +291,6 @@ R can be built using high performance threaded libraries for math in general, an
 
 Here the single R process has launched several threads of execution -- all of which are part of the same process, and so can see the same memory, eg the large matrices.
 
-Processes vs Threads vs CPUs vs Cores
-========================================================
-
-<div class="columns-2">
-
-A process is a running program. It has data, the program code, and one or more threads of execution - points in the code that is currently being run.  
-
-A thread can see all of the data (and all other threads) within a process; you can't see anything
-outside of your own user process.
-
-The operating system assigns running threads to cores (or CPUs, or processors, which are the same
-thing and I'll use the terms interchangably.)  
-
-"Core" is the least ambiguous term --- an independent processing unit.
-
-![Process](images/process-sm.png)
-</div>
-
-Split, Apply, Combine
-========================================================
-
-Popularized by Henry Wickham for R (in the paper describing his `pylr` pacakge), this has
-become a model for thinking about data analysis in R (and to some extent, pandas.)
-
-Split the data set up into relevant sub-sets; apply some analysis to it; combine the
-results.
-
-*E.g.*, seasonal detrending - break data up by months before applying.  Break public
-health data up into relevant demographic groups, and apply analyses.  Etc.
-
-This is exactly the way to think about scalable data analysis.  Split the data - 
-or tasks on that data - up between computing elements; do the analyses; then combine
-the results somehow.
-
-The details depend a great deal on the analyses (and the nature of the data.)
 
 Packages that explicitly use parallelism
 ========================================================
@@ -362,7 +311,10 @@ can be implicitly multithreaded.
 When at all possible, don't do the hard work yourself --- look to see if a package already
 exists which will do your analysis at scale.
 
-# Using all Processors on a Computer with parallel/multicore
+
+Packages for Implementing Parallel Workflows
+========================================================
+type: sub-section
 
 The Parallel Package
 ========================================================
@@ -382,8 +334,6 @@ different ways.
 Multicore - forking
 ========================================================
     
-<div class="columns-2">
-
 Multicore creates new processes by forking --- cloning -- the original process.  
 
 That means the new processes starts off seeing a copy of exactly the same data as the original.
@@ -394,13 +344,14 @@ file.
 
 Windows doesn't have fork(), so windows can't use these routines.
 
+*** 
+
 ![Multicore: fork()](images/fork-sm.png)
-</div>
+
 
 Multicore - forking
 ========================================================
     
-<div class="columns-2">
 **Performance Tip**: Modern OSs are lazy - the copy of memory isn't made unless it has to be, and
 it doesn't have to be until one process or the other writes to the memory.  
 
@@ -408,13 +359,12 @@ That copy is slow, and takes new memory.
 
 So in `multicore`, don't overwrite old variables if possible.
 
+***
+
 ![Multicore: fork()](images/fork-sm.png)
-</div>
 
 Snow - Spawning
 ========================================================
-    
-<div class="columns-2">
 Snow creates entirely new R processes to run the jobs.
 
 A downside is that you need to explicitly copy over any needed data, functions.
@@ -425,8 +375,10 @@ not just current machine.  So you can in principle use entire clusters.
 In addition, the flipside of the downside: new processes don't have any unneeded data 
 - less total memory footprint.
 
+***
+
 ![SNOW: spawn()](images/spawn-sm.png)
-</div>
+
 
 mcparallel/mccollect
 ========================================================
@@ -448,7 +400,7 @@ We start the two tasks with `mcparallel`, and collect the answers with` mccollec
 ```{r}
 library(parallel, quiet=TRUE)
 source("data/airline/read_airline.R")
-jan2010 <- read.airline("data/airline/airOT201001.csv")
+jan2010 <- read.airline("data/airline/airOT201001.csv.gz")
 unique.planes <- mcparallel( length( unique( sort(jan2010$TAIL_NUM) ) ) ) 
 median.elapsed <- mcparallel( median( jan2010$ACTUAL_ELAPSED_TIME, na.rm=TRUE ) )
 ans <- mccollect( list(unique.planes, median.elapsed) )
@@ -792,7 +744,7 @@ Emboldened by our success so far, let's try re-doing our $k$-means calculations:
 delaycols <- c(18, 28, 40, 41, 42, 43, 44)
 
 source("data/airline/read_airline.R")
-jan2010 <- read.airline("data/airline/airOT201001.csv")
+jan2010 <- read.airline("data/airline/airOT201001.csv.gz")
 jan2010 <- jan2010[,delaycols]
 jan2010 <- jan2010[complete.cases(jan2010),]
 do.n.kmeans <- function(n) { kmeans(jan2010, centers=4, nstart=n) }
@@ -848,6 +800,8 @@ clusterCall(cl, rnorm, 5)
 clusterCall(cl, system, "hostname")
 stopCluster(cl)
 ```
+
+TODO:::
 
 For this to work, you will almost certainly have to (temporarily) tack the line
 ```
@@ -925,7 +879,7 @@ the departure-time histogram again.  This time, we're only going to send across 
 be computed:
 
 ```{r}
-jan2010 <- read.airline("data/airline/airOT201001.csv")
+jan2010 <- read.airline("data/airline/airOT201001.csv.gz")
 jan2010 <- jan2010[complete.cases(jan2010),]
 
 get.hour <- function(timeInt) timeInt %/% 100
@@ -1387,7 +1341,345 @@ Is: "This is the captain: Sorry for the delay folks, but we'll make it up in the
 
 How would you use foreach to loop over the various years' data?
 
-# Advanced R: Rdsm, pbdR
+A Few Words on R and Memory
+============================================
+type: sub-section
+
+A Few Words on R and Memory
+============================================
+
+Because R frequently needs to make temporary copies (R works best as a functional programming language),
+hitting memory limit frequently becomes a problem.
+
+Avoiding hitting that limit too early requires some caution.
+
+Need to know how R handles variables and memory.
+
+Garbage Collection
+============================================
+left: 66%
+Like a lot of dynamic languages, R relies on _garbage_ _collection_ to limit memory usage.
+
+"Every so often", a garbage collection task runs and deletes variables that won't be used any more.
+
+You can force the garbage collection to run at any given time by calling `gc()`, but this almost never fixes anything significant.
+
+How can the gc know that you're not going to use that big variable in the next line?
+
+Gc needs your help to be effective.
+***
+![Image](images/GCNeedsYou-75.png)
+
+Useful commands for memory management
+============================================
+
+- `gc(verbose=TRUE)`, or just `gc(TRUE)`.
+    - gc() alone probably won't help anything.  This calls gc() - likely not very useful - but gives verbose output, returning current memory usage as a matrix.
+- `ls()`
+    - Lists current variables
+- `object.size()`
+    - Pass it a variable, it prints out its size.  Pass it `get("variablename")` (*eg*, quoted) and it will get that variable and print its size.
+- `rm()`
+    - Deletes a variable you're not going to use.  Lets gc() go to work.
+- Fun little one-liner which prints out all variables by size in bytes:
+```{r eval=FALSE}
+sort( sapply( ls(), function(x) { object.size(get(x))} ),decreasing=TRUE )
+```
+
+Object.size() and gc(TRUE)
+============================================
+
+Let's play with object.size() and gc(TRUE):
+```{r}
+gc(TRUE)
+old.mem <- gc(TRUE)[,c(1:2,5:6)]
+x <- rep(0.,(16*1024)**2)
+xsize <- object.size(x)
+xsize
+```
+
+Object.size() and gc(TRUE)
+============================================
+
+Let's play with object.size() and gc(TRUE):
+```{r}
+xsize
+print(xsize,units="MB")
+new.mem <- gc(TRUE)[,c(1:2,5:6)]
+new.mem-old.mem
+```
+
+Object.size() and gc(TRUE)
+============================================
+
+Now let's delete the object and see how system memory behaves:
+```{r}
+rm(x)
+final.mem <- gc(TRUE)[,c(1:2,5:6)]
+final.mem
+final.mem-old.mem
+```
+
+
+Better to Use Functions
+============================================
+
+... but if you use functions:
+
+- Variables deleted as they fall out of scope
+- Code is more readable, maintable, reusable
+
+
+```{r}
+rnorm.sum <- function(n) {
+  x <- rnorm(n)
+  sum(x)
+}
+orig.gc <- trunc.gc()
+rnorm.sum(16*1024*1024)
+after.gc <- trunc.gc()
+after.gc - orig.gc
+```
+
+
+Out Of Core / External Memory Computation
+========================================================
+type: sub-section
+
+Out Of Core / External Memory Computation
+========================================================
+Some problems require doing fairly simple analysis on a data set too large to fit into memory.
+
+- Min/mean/max
+- Data cleaning
+- Even linear fitting is pretty simple
+
+In that case, one processor may be enough; you just want a way to not overrun memory.
+
+_Out of Core_, or _External Memory_ computation leaves the data on disk, bringing 
+in to memory only what is needed/fits at any given point.
+
+For some computations, this works well (but note: disk access is always ***much***
+slower than memory access.)
+
+Bigmemory Package
+========================================================
+
+The `bigmemory` package defines a generalization of a matrix class, `big.matrix`, which can be _file-backed_ - that is, can exist primarily on disk, with parts brought into memory when necessary.
+
+This approach works fairly well when one's data access involves passing through the
+entire data set once or a very small number of times, either combining data or 
+extracting a subset.
+
+Packages like `bigalgebra` or `biganalytics` (not covered here) build on`bigmemory`.
+
+*** 
+
+![External Memory](images/external-memory-sm.png)
+
+Ideal gas Data Set
+========================================================
+
+In `data/idealgas`, we have a set of synthetic data files describing an ideal gas experiment - setting temperature, amount of material, and volume, and measuring the pressure.  
+
+Simple data sets:
+```{r}
+small.data <- read.csv("data/idealgas/ideal-gas-fixedT-small.csv")
+small.data[1:2,]
+```
+
+Row name, pressure (Pa), volume (m^3^), N (moles), and temperature (K).
+
+A larger data set consisting of 124M rows, 5.8GB, is sitting in ideal-gas-fixedT-large.csv, and we'd like to do some analysis of this data set.  But the size is a problem.
+
+A Note on File Formats
+========================================================
+
+Let's consider the humble .csv file:
+```
+$ ls -sh1 airOT2010.*
+151M airOT2010.RDS
+151M airOT2010.Rdata
+1.4G airOT2010.csv
+
+$ Rscript  timeexamples.R
+[1] "Reading Rdata file"
+   user  system elapsed
+ 11.697   0.616  12.319
+[1] "Reading RDS file"
+   user  system elapsed
+ 11.041   0.644  11.694
+[1] "Reading CSV file"
+   user  system elapsed
+140.640   3.352 144.142
+```
+
+A Note on File Formats
+========================================================
+
+CSV --- or really, any text-based format --- is the worst possible format for quantiative data. It manages 
+the trifecta of being:
+
+- Slow to read
+- Huge
+- Inaccurate
+
+Converting floating point numbers back and forth between internal represenatations and strings is slow and
+prone to truncation.  
+
+Use binary formats whenver possible.  .Rdata is a bit prone to change; .RDS is modestly better.  Portable
+file formats like HDF5 (for data frames) or NetCDF4 (for matrices and arrays) are compact, accurate, fast
+(not as fast as .Rdata/.RDS), and can be read by tools other than R.
+
+
+Creating a file-backed big matrix
+========================================================
+
+We've already created a big.matrix file from this data set, using
+```{r eval=FALSE}
+data <- read.big.matrix("data/idealgas/ideal-gas-fixedT-large.csv", header=TRUE,  
+                        backingfile="data/idealgas/ideal-gas-fixedT-large.bin", 
+                        descriptorfile="ideal-gas-fixedT-large.desc")
+```
+
+This reads in the .csv file and outputs a binary equivalent (the "backingfile") and a descriptor (in the "descriptorfile") which contains all of the information which describes the binary blob.
+
+You can read the descriptorfile: `more ideal-gas-fixedT-large.desc`
+
+Done for you since initial convertion takes 12 minutes for this set - kind of boring.
+
+**Note**: converts into a _matrix_, which is a less flexible data type than a data frame; homogeneous type.   Here, we'll use all numeric.
+
+Using a big.matrix
+========================================================
+
+Let's do some simple analysis on the data set and see how memory behaves.
+```{r}
+library(bigmemory, quiet=TRUE)
+orig.gc <- trunc.gc()
+data <- attach.big.matrix("data/idealgas/ideal-gas-fixedT-large.desc")
+trunc.gc()-orig.gc
+```
+
+Using a big.matrix
+========================================================
+
+Let's do some simple analysis on the data set and see how memory behaves.
+```{r}
+data[1:2,]
+system.time(min.p <- min(data[,"pres"]))
+trunc.gc()-orig.gc
+```
+
+Using a big.matrix
+========================================================
+
+That only took ~7 seconds to scan through 124M records to find a minimum.  Let's try a few other calculations:
+Let's do some simple analysis on the data set and see how memory behaves.
+```{r}
+min.p
+system.time(max.p <- max(data[,"pres"]))
+system.time(mean.t <- mean(data[,"temp"]))
+```
+
+Using a big.matrix
+========================================================
+
+Going through the same column a second time was faster, because some of the data was cached; going through a new column was about the same speed as the first.  What has that done to memory?
+```{r}
+trunc.gc()-orig.gc
+```
+
+Using a big.matrix
+========================================================
+
+Let's try something more complicated: we know that averaged over our data, we should have $p V = n R T$.  Let's try to infer the gas constant $R$:
+
+```{r}
+system.time(sum.pv <- sum(data[,"pres"]*data[,"vol"]))
+system.time(sum.nt <- sum(data[,"n"]*data[,"temp"]))
+sum.pv/sum.nt
+```
+
+Using a big.matrix
+========================================================
+
+And we're still not using that much memory.
+
+```{r}
+trunc.gc()-orig.gc
+```
+
+Using a big.matrix
+========================================================
+
+Let's extract a subset of the data and analyze it.  
+
+The `mwhere` command in `bigmemory` lets us search through the data for **m**ultiple conditions, and extract that data:
+
+```{r}
+system.time(subset.data <- data[mwhich(data, cols=c("n","n"), 
+                                       vals=list(0.9, 1.1), comps="eq", op="AND"),])
+class(subset.data)
+#fit <- lm(vol ~ temp, data=as.data.frame(subset.data))
+```
+
+Using a big.matrix
+========================================================
+
+```{r}
+#summary(fit)
+```
+
+Using a big.matrix
+========================================================
+
+```{r}
+object.size(subset.data)
+trunc.gc()-orig.gc
+```
+
+Using a big.matrix
+========================================================
+
+Other options:
+
+- `morder` or `mpermute` allow you to sort the data in memory or on disk
+- `head` and `tail` let you get the start/end rows
+- `mwhich` allows all sorts of slicing and dicing
+- `sub.big.matrix` lets you extract contiguous regions of the matrix
+
+Summary: bigmemory
+========================================================
+
+If you just have a data file much larger than memory that you have to crunch and the amount of actual computation is not a bottleneck, the `bigmemory` and related packages may be all you need.
+
+Works best if:
+
+- Data is of homogeneous type - eg, all integer, all numeric, all string
+- Just need to work on a subset of data at a time, or
+- Just need to make one or two passes through the data to complete analysis
+
+Bigmemory hands-on
+========================================================
+
+`lm()` doesn't work natively on a `big.matrix` - but we can write our own.
+
+If we have an OLS model $\hat{y_i} = a x_i + b + \epsilon$, we can fit it with 
+
+$b = \bar{y} - a \bar{x}$
+
+$a = \frac{\sum_i{ x_i y_i } - n \bar{x} \bar{y}}{\sum_i{x_i^2} - n \bar{x} \bar{x}}$
+
+Using the examples above, fit a couple of columns of the ideal gas data set.  Do the results make
+sense?  (Once it's working, try fitting $pV \propto nT$.)  How much memory is used?
+
+# Using multiple processors in R
+
+
+Advanced R: Rdsm, pbdR
+========================================================
+type: sub-section
 
 Advanced R: Rdsm, pbdR
 ========================================================
@@ -1402,7 +1694,6 @@ This afternoon, we're going to look at two somewhat more advanced pacakges, that
 Rdsm
 ========================================================
 
-<div class="columns-2">
 While it's generally true that processes can't peer into each other's memory, there
 is an exception.
 
@@ -1412,9 +1703,10 @@ This isn't necessary for threads within a process; but it *is* necessary for mul
 processes working on the same data.
 
 Only works on-node; can't share memory across a network.
-![Shared Memory](images/shared-mem-sm.png)
 
-</div>
+***
+
+![Shared Memory](images/shared-mem-sm.png)
 
 Rdsm
 ========================================================
@@ -1488,7 +1780,6 @@ Works well when:
 pbdR
 ========================================================
 
-<div class="columns-2">
 The master-worker approach that all the methods we've used so far take works very well for interactive work,
 is easy to loadbalance, and is easy to understand.
 
@@ -1500,10 +1791,10 @@ doing nothing except some small amount of coordination.
 For a very large number of processors (hundreds or more, depending on the size of each
 task), the workerscan easily overwhelm the master, meaning all of the workers are 
 sitting around waiting while the master  catches up.
-
+***
 ![Master Worker Imbalances](images/master-worker-sm.png)
 
-</div>
+
 
 pbdR
 ========================================================
@@ -1703,7 +1994,6 @@ finalize()
 pbd Data Distributions
 ========================================================
 
-<div class="columns-2">
 pbd has a couple of ways of distributing data.  
 
 What we've used before is their so-called "GBD" distribution - globaly distributed data.
@@ -1712,11 +2002,10 @@ It's split up by rows.
 However, for linear algebra computations, a block-cyclic distribution is much more
 useful.
 
-
+***
 
 ![pbd Data Distributions](images/pbd-distributions-sm.png)
 
-</div>
 
 Reading a pbdR Ddmatrix
 ========================================================
