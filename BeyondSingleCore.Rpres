@@ -71,6 +71,10 @@ Processes and threads:
 - Threads in the same process can see most of the same memory
 - Processes generally cannot peer into another processes memory
 
+Interpreted languages: generally you can only directly work with processes
+
+Can call libraries that invoke threads (BLAS/LAPACK)
+
 ***
 
 ![Processes vs threads](images/process-threads.png)
@@ -121,18 +125,7 @@ Perhaps splitting the problem up onto multiple computers in a cluster will give 
 
 ![Rack of Computers](images/rack.png)
 
-Parallel computing: faster, bigger, more
-============================================
 
-*Not* on this list:
-
-My program constantly randomly reads from and writes to thousands of files and these operations are
-very slow.
-
-These I/O bound problems are not easily solved with parallelism - adding more processors or nodes
-doesn't necessarily help (can make worse).
-
-Need better I/O strategy - databases? 
 
 Concurrency: Multiple Independant Computations
 ========================================================
@@ -161,7 +154,7 @@ Throughput: how many tasks/time
 For completely independent tasks, P processors can increase throughput by factor P!
  
 ***
-![Throughput](images/throughput.png)
+![Throughput](images/throughput-sm.png)
 
 
 Scaling of parameter study with number of processors
@@ -197,6 +190,20 @@ time.per.task <- 2.
 ntasks <- 12
 total.time <- (time.per.task*ntasks)/p
 plot(p, total.time, pch=16, xlab="Number of Processors", ylab="Total Time Required")
+```
+
+Scaling of parameter study with number of processors
+========================================================
+Another way to look at it: time it takes to get some fixed amount of work done
+
+More usual (and more important!)
+
+Perfect scaling: time to completion ~ 1/P
+
+P procesors - P times faster
+
+*** 
+```{r echo=FALSE}
 plot(p, total.time, log="xy", pch=16, xlab="Number of Processors", ylab="Total Time Required")
 ```
 
@@ -261,6 +268,27 @@ matplot(t(eff), type = c("b"), pch=16, xlab="Number of Processors", ylab="Effici
 legend("topright", legend = serial.fracs,  pch=16, col=1:6, title="Serial Fraction")
 ```
 
+Task vs data parallelism
+========================================================
+
+What we've described has been finding concurrency by analyzing
+different chunks of data the same way
+
+- seeds for simulation
+- parameters for parameter sweep
+- subsets of data 
+
+Also possible is to identify different tasks that must be done and perform those in parallel:
+multiple fits, summary analysis + generating several plots, etc.
+
+Generally more manual but can work very well.
+
+Dependencies limit parallelism
+
+***
+
+![Diagram showing dependencies](images/gantt.png)
+
 Existing parallelism (BLAS, package support)
 ========================================================
 type: sub-section
@@ -270,7 +298,7 @@ Existing parallelism
 
 It's important to realize that many fundamental routines as well as higher-level packages come with some degree of scalability and parallelism "baked in".  
 
-Open another terminal to your node, and run `top` while executing the following in R:
+Running `top` (or `glances`, or...) while executing the following in R:
 
 ```{r eval=FALSE}
 n <- 4*1024
@@ -311,6 +339,32 @@ can be implicitly multithreaded.
 When at all possible, don't do the hard work yourself --- look to see if a package already
 exists which will do your analysis at scale.
 
+Caret
+========================================================
+
+Caret is a widely-used machine learning package, that uses `foreach` (which we'll learn about)
+to parallelize things like CV-folds, etc:
+
+```{r caret}
+data(iris)
+library(caret)
+
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+metric <- "Accuracy"
+
+system.time(fit.lda.ser <- train(Species~., data=iris, method="svmRadial", metric=metric, trControl=control)
+)
+```
+
+Caret
+========================================================
+```{r caretparallel}
+library(doMC)
+registerDoMC(cores=4)
+
+system.time(fit.lda.par <- train(Species~., data=iris, method="svmRadial", metric=metric, trControl=control)
+)
+```
 
 Packages for Implementing Parallel Workflows
 ========================================================
@@ -396,7 +450,7 @@ time.  These are two independant calculations, and so can be done independantly.
 mcparallel/mccollect
 ========================================================
 
-We start the two tasks with `mcparallel`, and collect the answers with` mccollect`:
+We start the two tasks with `mcparallel`, and collect the answers with `mccollect`:
 ```{r}
 library(parallel, quiet=TRUE)
 source("data/airline/read_airline.R")
@@ -656,7 +710,7 @@ system.time( res <- pvec(1:maxn, fx, mc.cores=4) )
 system.time( res <- mclapply(1:maxn, fx, mc.cores=4) )
 ```
 
-parallel/multicore hands-on
+Test your skills: parallel/multicore
 ========================================================
 
 Using the entire 2010 dataset, and the examples above, examine one of the following questions:
@@ -685,7 +739,9 @@ Things to watch for:
 - Won't work on Windows (but what does?)
 - `mc.cores` is a lie.  It's the number of  _tasks_, not _cores_.  On an 8-core machine, if you have multithreaded libraries for (say linear algebra) and launch something `mc.cores=8` that does heavy linear algebra, you'll end up with 64 threads competing for 8 cores.  Either make sure to turn off threading (`export OMP_NUM_THREADS=1`), or use fewer tasks.
 
-# Multiple computers with parallel/snow
+Multiple computers with parallel/snow
+========================================================
+type: sub-section
 
 ```{r include=FALSE}
 # Get rid of the data up to this point
@@ -757,9 +813,9 @@ stopCluster(cl)
 ```
 ```{r eval=FALSE}
  Error in checkForRemoteErrors(val) : 
-========================================================
+-----------------------------
    4 nodes produced errors; first error: object 'jan2010' not found
-========================================================
+-----------------------------
 ```
 Ah!  Failure.
 
@@ -794,20 +850,14 @@ The default cluster is a sockets-based cluster; you can run on multiple machines
 specifying them to a different call to makeCluster:
 
 ```{r eval=FALSE}
-hosts <- c( rep("localhost",8), rep("gpc01", 2) )
+hosts <- c( rep("localhost",8), rep("192.168.0.10", 8) )
 cl <- makePSOCKcluster(names=hosts)
 clusterCall(cl, rnorm, 5)
 clusterCall(cl, system, "hostname")
 stopCluster(cl)
 ```
 
-TODO:::
-
-For this to work, you will almost certainly have to (temporarily) tack the line
-```
-source ${SCRATCH}/ScalableDataAnalysis/R/setup
-```
-to the bottom of your `.bashrc`.  But once it is done, you have succcessfully run random number
+Pnce it is done, you have succcessfully run random number
 generators across multiple hosts.
 
 Cluster types
@@ -979,16 +1029,20 @@ multiple computers (nodes in a cluster, or desktops in a lab) for a single compu
 - `snow::snow.time` is great for understanding performance.
 - Use `makePSOCKcluster` for small clusters; consider `makeMPIcluster` for larger (but see `pbdR` section this afternoon).
 
-Hands-On: parallel/snow
+Test your skills: parallel/snow (1/2)
 ========================================================
 
-Working with a partner, qsub a session with two nodes, and setup a PSOCK cluster across both nodes.
-(you can `cat $PBS_NODEFILE` once your job has started to see the other node.)  Call `unlist(clusterCall(cl, system, "hostname"))` to make sure that you have workers on both nodes.
+On a set of workstations (or AWS instances) you have access to, try a session with two nodes,
+and setup a PSOCK cluster across both nodes.
+Call `unlist(clusterCall(cl, system, "hostname"))` to make sure that you have workers on both nodes.
 
-Load the 2010 data and break it up by month (look up the `split` command) and see which month had the highest
-fraction of cancelled flights.  
+Load the 2010 data and break it up by month (look up the `split` command) and see which month had the
+highestfraction of cancelled flights.  
 
 Then split the data up by airline and see which airline had the highest fraction of cancelled flights.
+
+Test your skills: parallel/snow (2/2)
+========================================================
 
 There are two big downsides with how we are doing this: the master is doing a huge amount of the work by
 doing the pre-splitting, and the whole data set has to be in memory.   Tackle one or the other of them:
@@ -999,7 +1053,9 @@ need to know the full set of airlines (or the full set of months, which is somew
 How to do that?
 - Master having whole problem in memory: use bigmemory along with parallel.
 
-# foreach and doparallel
+foreach and doparallel
+========================================================
+type: sub-section
 
 foreach and doparallel
 ========================================================
@@ -1076,8 +1132,12 @@ foreach (i=1:3, .multicombine=TRUE, .combine="sum") %do% sqrt(i)
 Combining results
 ========================================================
 
-Most of these are self explanatory.  `multicombine` is worth mentioning: by default, `foreach` will combine
-each new item individually.  If `.multicombine=TRUE`, then you are saying that you're passing a function
+Most of these are self explanatory.
+
+`multicombine` is worth mentioning: by default, `foreach` will combine
+each new item into the final result one-at-a-time.
+
+If `.multicombine=TRUE`, then you are saying that you're passing a function
 which will do the right thing even if foreach gives it a whole wack of new results as a list or vector -
 *e.g.*, a whole chunk at a time.
 
@@ -1095,7 +1155,7 @@ foreach (i=1:3, .combine="c") %:%
 Filtering Items
 ========================================================
 
-And you can also filter items, using `with`:
+And you can also filter items, using `when`:
 ```{r}
 foreach (a=rnorm(25), .combine="c") %:%
   when(a >= 0) %do%
@@ -1323,7 +1383,7 @@ different backend!
 Note that you can have portions of your analysis code use `foreach` with `parallel` and portions using the
 backend with apply-style parallelism; it doesn't have to be all one or the other.
 
-Stock Correlations: Hands-on
+Test your skills: Stock Correlations
 ========================================================
 
 Parallelize the stock correlation matrix calculation with `foreach`.  You should get a proper speedup here.
@@ -1340,6 +1400,80 @@ departure delay, is the arrival delay (on average) less than or greater than the
 Is: "This is the captain: Sorry for the delay folks, but we'll make it up in the air" a lie?
 
 How would you use foreach to loop over the various years' data?
+
+Scalable Data Analysis: Best Practices
+============================================
+type: sub-section
+
+Best Practices: Don't reinvent wheels
+============================================
+
+There's no one-size-fits-all-analysis approach to taking advantage of multiple processors or nodes
+(or accellerators).
+
+Check to see if there already exists packages for doing your analysis in parallel.
+
+Best Practices: Big chunks better than little chunks
+============================================
+
+It's almost always easier to efficiently take advantage of **coarse-grained** parallelism.
+
+_E.g._ running each cross-validation fold on a different processor will almost certainly work 
+better than running them sequentially but with parts of the training method parallelized.  
+
+Amdahl's Law!
+
+Best Practices: Parallelism gives you more _compute_
+============================================
+
+For throwing more cores at the problem to help, the calculation has to have been limited by
+compute power.
+
+I/O bound analyses, or network-bound analyses, or even memory-bandwidth-constrained analyses
+can easily have _worse_ performance with more cores, not _better_.
+
+Best Practices: One task per core
+============================================
+
+Compute bound calculations slow down if something else is sharing the processor with them.
+
+Except for debugging, you generally don't want to run (say) doParallel with more cores than you
+actually have on your computer.
+
+Sometimes using the number of pseudo-cores/hyperthreads/hardware threads is helpful if memory bandwidth
+is a limiting factor, or not if not - you can test.
+
+Best Practices: Don't trip over your own feet
+============================================
+
+Because you only want one task for core, be careful about accidentally using parallelism!
+
+Eg, a threaded blas/lapack is great for interactive use, _but_:
+
+If you're 
+- doing four tasks at once with multicore on your laptop, and
+- Each of those tasks calls a matrix solve which uses a threaded BLAS to launch 4 threads
+
+Now you're competing with yourself for your own laptop's cores.
+
+Summary
+============================================
+
+R comes with an increasingly rich set of tools for taking advantage of more compute power:
+- parallel
+- foreach/doParallel
+
+Keep in mind what we talked about in terms of overhead, and:
+- Don't reinvent wheels
+- Big chunks are better than little chunks
+- Parallelism gives you more _compute_, not I/O
+- One task per core
+- Don't trip over your own feet
+
+
+Extra material
+============================================
+type: sub-section
 
 A Few Words on R and Memory
 ============================================
@@ -1431,6 +1565,7 @@ Better to Use Functions
 
 
 ```{r}
+trunc.gc <- function() { gc(TRUE)[,c(1:2,5:6)] }
 rnorm.sum <- function(n) {
   x <- rnorm(n)
   sum(x)
@@ -1660,7 +1795,7 @@ Works best if:
 - Just need to work on a subset of data at a time, or
 - Just need to make one or two passes through the data to complete analysis
 
-Bigmemory hands-on
+Test your skills: Bigmemory
 ========================================================
 
 `lm()` doesn't work natively on a `big.matrix` - but we can write our own.
@@ -1674,7 +1809,7 @@ $a = \frac{\sum_i{ x_i y_i } - n \bar{x} \bar{y}}{\sum_i{x_i^2} - n \bar{x} \bar
 Using the examples above, fit a couple of columns of the ideal gas data set.  Do the results make
 sense?  (Once it's working, try fitting $pV \propto nT$.)  How much memory is used?
 
-# Using multiple processors in R
+(Note: there is a `biglm` package)
 
 
 Advanced R: Rdsm, pbdR

@@ -18,20 +18,32 @@
   color: #348e28;
 }
 
+.reveal strong {
+    color: #348e28;
+}
+
 .section .reveal  p, ul, li {
   font-family: 'Oswald';
   color: #000000a0;
   font-size: 1.6em;
 }
 
-.reveal  p, ul, li {
-  font-family: 'Average';
-  color: #000000a0;
+.reveal li { font-family: 'Average'; color: #000000a0; font-size: 0.9em; }
+.reveal ul { font-family: 'Average'; color: #000000a0; font-size: 0.9em; }
+.reveal p { font-family: 'Average'; color: #000000a0; font-size: 0.8em; }
+
+.reveal strong {
+  color: #000000ff;
 }
 
 .reveal strong {
   color: #000000ff;
 }
+
+
+.reveal code.r { font-size: 1.0em; }
+.reveal pre code { font-size: 1.0em; }
+
 
 .section .reveal h1 { font-size: 2.2em; }
 .section .reveal h2 { font-size: 1.6em; }
