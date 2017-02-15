@@ -24,8 +24,15 @@ Today will look something like this:
 - How to think about scaling 
 - Parallel Package
     - Multicore
+        - mcparallel/mccollect/mclapply
+        - parallel RNG
+        - load balancing, chunking
+        - pvec
     - Snow
+        - makecluster/stopcluster/clusterExport
+        - clusterSplit
 - Foreach
+    - chunking, iterators
 - Scalable Data Analysis Best Practices
 
 Extra material online
@@ -1674,7 +1681,8 @@ Creating a file-backed big matrix
 
 We've already created a big.matrix file from this data set, using
 ```{r eval=FALSE}
-data <- read.big.matrix("data/idealgas/ideal-gas-fixedT-large.csv", header=TRUE,  
+data <- read.big.matrix("data/idealgas/ideal-gas-fixedT-large.csv", 
+                        header=TRUE,  
                         backingfile="data/idealgas/ideal-gas-fixedT-large.bin", 
                         descriptorfile="ideal-gas-fixedT-large.desc")
 ```
@@ -1730,7 +1738,7 @@ trunc.gc()-orig.gc
 Using a big.matrix
 ========================================================
 
-Let's try something more complicated: we know that averaged over our data, we should have $p V = n R T$.  Let's try to infer the gas constant $R$:
+Let's try something more complicated: we know that averaged over our data, we should have $$p V = n R T$$.  Let's try to infer the gas constant$:
 
 ```{r}
 system.time(sum.pv <- sum(data[,"pres"]*data[,"vol"]))
@@ -1752,20 +1760,22 @@ Using a big.matrix
 
 Let's extract a subset of the data and analyze it.  
 
-The `mwhere` command in `bigmemory` lets us search through the data for **m**ultiple conditions, and extract that data:
+The `mwhich` command in `bigmemory` lets us search through the data for **m**ultiple conditions, and extract that data:
 
 ```{r}
-system.time(subset.data <- data[mwhich(data, cols=c("n","n"), 
-                                       vals=list(0.9, 1.1), comps="eq", op="AND"),])
+system.time(subset.data <- data[mwhich(data, cols=c("n", "pres"), 
+                                       vals=list(c(1,1.1), c(99000,101000)),
+                                       comps=list(c("ge","le"),c("ge","le")), 
+                                       op="AND"),])
 class(subset.data)
-#fit <- lm(vol ~ temp, data=as.data.frame(subset.data))
+fit <- lm(vol ~ temp, data=as.data.frame(subset.data))
 ```
 
 Using a big.matrix
 ========================================================
 
 ```{r}
-#summary(fit)
+summary(fit)
 ```
 
 Using a big.matrix
@@ -1802,11 +1812,11 @@ Test your skills: Bigmemory
 
 `lm()` doesn't work natively on a `big.matrix` - but we can write our own.
 
-If we have an OLS model $\hat{y_i} = a x_i + b + \epsilon$, we can fit it with 
+If we have an OLS model $$\hat{y_i} = a x_i + b + \epsilon$$, we can fit it with 
 
-$b = \bar{y} - a \bar{x}$
+$$b = \bar{y} - a \bar{x}$$
 
-$a = \frac{\sum_i{ x_i y_i } - n \bar{x} \bar{y}}{\sum_i{x_i^2} - n \bar{x} \bar{x}}$
+$$a = \frac{\sum_i{ x_i y_i } - n \bar{x} \bar{y}}{\sum_i{x_i^2} - n \bar{x} \bar{x}}$$
 
 Using the examples above, fit a couple of columns of the ideal gas data set.  Do the results make
 sense?  (Once it's working, try fitting $pV \propto nT$.)  How much memory is used?
@@ -1823,7 +1833,7 @@ Advanced R: Rdsm, pbdR
 
 We've looked at some of the standard scalable computing packages for R.
 
-This afternoon, we're going to look at two somewhat more advanced pacakges, that solve very different problems.
+Here are two somewhat more advanced packages, that solve very different problems.
 
 - **Rdsm**: Get the most (performance, memory) out of a single-computer computation by using shared memory.
 - **pbdR**: Get the most (performance, scale) out of a cluster computation by ditching master-worker, and using very large-scale distributed routines.
@@ -1926,7 +1936,7 @@ For a small number of total processors (2-4, say), it really hurts to have one p
 doing nothing except some small amount of coordination.
 
 For a very large number of processors (hundreds or more, depending on the size of each
-task), the workerscan easily overwhelm the master, meaning all of the workers are 
+task), the worker scan easily overwhelm the master, meaning all of the workers are 
 sitting around waiting while the master  catches up.
 ***
 ![Master Worker Imbalances](images/master-worker-sm.png)
