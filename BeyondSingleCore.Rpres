@@ -359,11 +359,13 @@ system.time(fit.lda.ser <- train(Species~., data=iris, method="svmRadial", metri
 Caret
 ========================================================
 ```{r caretparallel}
-library(doMC)
-registerDoMC(cores=4)
+library(doParallel)
+registerDoParallel(4)
 
 system.time(fit.lda.par <- train(Species~., data=iris, method="svmRadial", metric=metric, trControl=control)
 )
+
+stopImplicitCluster()
 ```
 
 Packages for Implementing Parallel Workflows
@@ -479,7 +481,7 @@ system.time(fit2 <-  lm(ARR_DELAY ~ DEP_DELAY, data=jan2010))
 mcparallel/mccollect
 ========================================================
 
-So the time to beat is about 1.2s:
+So the time to beat is about 0.7s:
 ```{r}
 parfits <- function() {
   pfit1 <- mcparallel(lm(DISTANCE ~ AIR_TIME, data=jan2010))
@@ -488,8 +490,7 @@ parfits <- function() {
 }
 system.time( parfits() )
 ```
-We do see a savings of time --- ~1.0s vs 1.2s (and the best we could have done is ~0.8s.  Why?).
-But clearly actually forking the processes and waiting for them to rejoin itself takes some time.  
+Clearly actually forking the processes and waiting for them to rejoin itself takes some time.  
 
 This overhead means that we want to launch jobs that take a significant length of
 time to run - much longer than the overhead (hundredths to tenths of seconds for fork().)
@@ -529,7 +530,7 @@ ord.delays <- ord.delays[(ord.delays$ARR_DELAY_NEW > 0),]
 ord.delays <- ord.delays[complete.cases(ord.delays),]
 
 system.time( serial.res   <- kmeans(ord.delays, centers=2, nstart=40) )
-serial.res$betweenss
+serial.res$withinss
 ``` 
 
 Clustering with lapply
@@ -737,7 +738,7 @@ Things to watch for:
     - But will blow up the memory requirements
 - You can only use one machine's processors
 - Won't work on Windows (but what does?)
-- `mc.cores` is a lie.  It's the number of  _tasks_, not _cores_.  On an 8-core machine, if you have multithreaded libraries for (say linear algebra) and launch something `mc.cores=8` that does heavy linear algebra, you'll end up with 64 threads competing for 8 cores.  Either make sure to turn off threading (`export OMP_NUM_THREADS=1`), or use fewer tasks.
+- `mc.cores` is a lie.  It's the number of  _tasks_, not _cores_.  Can easily oversubscribe cores explicitly or implicitly
 
 Multiple computers with parallel/snow
 ========================================================
@@ -857,7 +858,7 @@ clusterCall(cl, system, "hostname")
 stopCluster(cl)
 ```
 
-Pnce it is done, you have succcessfully run random number
+Once it is done, you have succcessfully run random number
 generators across multiple hosts.
 
 Cluster types
@@ -1027,7 +1028,7 @@ multiple computers (nodes in a cluster, or desktops in a lab) for a single compu
 - Use `clusterApply` if each task requires an enormous amount of data.
 - Use `parLapply` if tasks are similar duration and data from multiple tasks will fit in memory.
 - `snow::snow.time` is great for understanding performance.
-- Use `makePSOCKcluster` for small clusters; consider `makeMPIcluster` for larger (but see `pbdR` section this afternoon).
+- Use `makePSOCKcluster` for small clusters; consider `makeMPIcluster` for larger (but see `pbdR` section online)
 
 Test your skills: parallel/snow (1/2)
 ========================================================
@@ -1227,6 +1228,8 @@ we're working on.  For large data sets, big memory.
 Foreach has _iterators_ that can iterate through an object without creating something the size of the
 object.  For instance, `icount()` is like the difference between Python 2.x range and xrange:
 ```{r eval=FALSE}
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl,cores=3)
 system.time(
   ans <- foreach (i=icount(2000), .combine="+") %do% {
     hrs <- rep(0,24)
@@ -1298,8 +1301,8 @@ Histogram Performance
 
 And this works in parallel, as well
 ```{r}  
-cl <- makePSOCKcluster(4)
-registerDoParallel(cl,cores=4)
+cl <- makePSOCKcluster(3)
+registerDoParallel(cl,cores=3)
 jan.matrix = matrix(jan2010$DEP_TIME[1:2000], ncol=500)
 system.time(
   ans <- foreach (times=iter(jan.matrix,by="row"), .combine="+") %dopar% {
@@ -1376,8 +1379,7 @@ and drawbacks of each.
 
 Use `foreach` if:
 - Your code already relys on `for`-style iteration; transition is easy
-- You don't know if you want multicore vs. snow style `parallel` use: you can switch just by registering a 
-different backend!
+- You don't know if you want multicore vs. snow style `parallel` use (or other kinds, like batch jobs): you can switch just by registering a different backend!
 - You want to be able to incrementally improve the performance of your code.
 
 Note that you can have portions of your analysis code use `foreach` with `parallel` and portions using the
