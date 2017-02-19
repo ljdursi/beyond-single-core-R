@@ -4,7 +4,7 @@ Beyond Single Core: Parallel Analysis in R
 R is a great environment for interactive analysis on your desktop, but when your data needs outgrow your 
 personal computer, it's not clear what to do next.
 
-This is material for a short overview of scalable data analysis in R.  The slides can be viewed with Chrome at https://ljdursi.github.io/beyond-single-core-R .
+This is material for a short overview of scalable data analysis in R.  The slides can be viewed at https://ljdursi.github.io/beyond-single-core-R .
 
 It covers:
 
