@@ -232,7 +232,7 @@ plot(p, efficiency, pch=16, xlab="Number of Processors", ylab="Parallel Efficien
 Finding concurrency: Split, Apply, Combine
 ========================================================
 
-Popularized by Henry Wickham, this has
+Popularized by Hadley Wickham, this has
 become a model for thinking about data analysis in R in the tidyverse.
 
 Split the data set up into relevant sub-sets; apply some analysis to it; combine the
